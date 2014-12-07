@@ -825,7 +825,9 @@
                         <outlet property="sleepPowerScheme" destination="f7Q-gQ-AYs" id="sGh-I3-GrU"/>
                         <outlet property="sleepSampleFrequency" destination="D3d-Nr-Tkw" id="fH8-uB-Abf"/>
                         <outlet property="startAccelerometer" destination="g0s-Ae-HoJ" id="3aW-uz-xl1"/>
+                        <outlet property="startiBeacon" destination="l12-9L-Rme" id="9LN-w2-rD8"/>
                         <outlet property="stopAccelerometer" destination="ski-pS-qcg" id="fFp-i2-nMc"/>
+                        <outlet property="stopiBeacon" destination="WM3-R1-tOx" id="4ov-5B-s0w"/>
                         <outlet property="tempratureLabel" destination="yZC-2Q-P5a" id="Mx0-fZ-HmW"/>
                     </connections>
                 </viewController>
