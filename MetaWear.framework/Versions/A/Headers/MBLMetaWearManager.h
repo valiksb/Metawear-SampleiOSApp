@@ -1,12 +1,38 @@
-//
-//  MBLMetaWearManager.h
-//  MetaWear
-//
-//  Created by Stephen Schiffli on 7/29/14.
-//  Copyright (c) 2014 MbientLab. All rights reserved.
-//
+/**
+ * MBLMetaWearManager.h
+ * MetaWear
+ *
+ * Created by Stephen Schiffli on 7/29/14.
+ * Copyright 2014 MbientLab Inc. All rights reserved.
+ *
+ * IMPORTANT: Your use of this Software is limited to those specific rights
+ * granted under the terms of a software license agreement between the user who
+ * downloaded the software, his/her employer (which must be your employer) and
+ * MbientLab Inc, (the "License").  You may not use this Software unless you
+ * agree to abide by the terms of the License which can be found at
+ * www.mbientlab.com/terms . The License limits your use, and you acknowledge,
+ * that the  Software may not be modified, copied or distributed and can be used
+ * solely and exclusively in conjunction with a MbientLab Inc, product.  Other
+ * than for the foregoing purpose, you may not use, reproduce, copy, prepare
+ * derivative works of, modify, distribute, perform, display or sell this
+ * Software and/or its documentation for any purpose.
+ *
+ * YOU FURTHER ACKNOWLEDGE AND AGREE THAT THE SOFTWARE AND DOCUMENTATION ARE
+ * PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY, TITLE,
+ * NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
+ * MBIENTLAB OR ITS LICENSORS BE LIABLE OR OBLIGATED UNDER CONTRACT, NEGLIGENCE,
+ * STRICT LIABILITY, CONTRIBUTION, BREACH OF WARRANTY, OR OTHER LEGAL EQUITABLE
+ * THEORY ANY DIRECT OR INDIRECT DAMAGES OR EXPENSES INCLUDING BUT NOT LIMITED
+ * TO ANY INCIDENTAL, SPECIAL, INDIRECT, PUNITIVE OR CONSEQUENTIAL DAMAGES, LOST
+ * PROFITS OR LOST DATA, COST OF PROCUREMENT OF SUBSTITUTE GOODS, TECHNOLOGY,
+ * SERVICES, OR ANY CLAIMS BY THIRD PARTIES (INCLUDING BUT NOT LIMITED TO ANY
+ * DEFENSE THEREOF), OR OTHER SIMILAR COSTS.
+ *
+ * Should you have any questions regarding your right to use this Software,
+ * contact MbientLab Inc, at www.mbientlab.com.
+ */
 
-#import <Foundation/Foundation.h>
 #import <MetaWear/MBLMetaWear.h>
 #import <MetaWear/MBLConstants.h>
 
@@ -20,12 +46,19 @@
 + (instancetype)sharedManager;
 
 /**
- Subscribe to upates to in the internal bluetooth manager state, this is useful
- for displaying errors if the user happens to turn off bluetooth radio in settings
- @param MBLCentralManagerStateHandler handler, Callback to handle each time a new device is found
+ Sets the queue for which all callbacks will occur on.  Defaults to the main queue.
+ @param NSOperationQueue queue, The queue on which the events will be dispatched.
  @returns none
  */
-- (void)startManagerStateUpdatesWithHandler:(MBLCentralManagerStateHandler)handler;
+- (void)setCallbackQueue:(NSOperationQueue *)queue;
+
+/**
+ Returns a list of saved MetaWear objects, you add to this list by calling rememberDevice
+ on an MBLMetaWear object.
+ @param MBLArrayHandler handler, Callback to deliever list remembered MBLMetaWear objects
+ @returns none
+ */
+- (void)retrieveSavedMetaWearsWithHandler:(MBLArrayHandler)handler;
 
 /**
  Begin scanning for MetaWear devices. This will invoke the provided block each time a
@@ -38,8 +71,10 @@
 /**
  Begin scanning for MetaWear devices with the option to filter duplicate devices or not.
  This will invoke the provided block each time a new device shows up if filter == YES or
- each time a new advertising packet is found if filter == NO. This continues until 
- stopScanForMetaWears is called.
+ each time a new advertising packet is found if filter == NO (may be many times per second).
+ This can be useful in specific situations, such as making a connection based on a 
+ MetaWear's RSSI, but may have an adverse affect on battery-life and application performance,
+ so use wisely.  This continues until stopScanForMetaWears is called.
  @param BOOL duplicates, YES: only callback when a new device is found, NO: callback each time
  @param MBLArrayHandler handler, Callback to handle each time a new device is found
  a new advertising packet is found
@@ -54,22 +89,37 @@
  */
 - (void)stopScanForMetaWears;
 
-/**
- Connect to the given MetaWear board. Once connection is complete, the provided block 
- will be invoked.  If the NSError pointer provided to the block is not null then the 
- connection failed, otherwise success
- @param MBLMetaWear device, MetaWear device to connect to
- @param MBLErrorHandler handler, Callback once connection is complete
- @returns none
- */
-- (void)connectMetaWear:(MBLMetaWear *)device withHandler:(MBLErrorHandler)handler;
+
 
 /**
- Disconnect from the given MetaWear board.
- @param MBLMetaWear device, MetaWear device to disconnect from
- @param MBLErrorHandler handler, Callback once disconnection is complete
+ This function is intended for recovery mode only if a MetaWear gets stuck in the bootloader
+ which may happen if a firmware update gets an unexpected error.
+ NOTE: You can only call updateFirmwareWithHandler:progressHandler: on the MBLMetaWear objects
+ in the array
+ NOTE: This will cancel any current MetaWear scans
+ @param BOOL duplicates, YES: only callback when a new device is found, NO: callback each time
+ a new advertising packet is found
+ @param MBLArrayHandler handler, Callback to handle each time a new device is found
  @returns none
  */
-- (void)cancelMetaWearConnection:(MBLMetaWear *)device withHandler:(MBLErrorHandler)handler;
+- (void)startScanForMetaBootsAllowDuplicates:(BOOL)duplicates handler:(MBLArrayHandler)handler;
+
+/**
+ Stop scanning for MetaBoot devices, this will release all handlers given to
+ startScanForMetaBootsAllowDuplicates:
+ @returns none
+ */
+- (void)stopScanForMetaBoots;
+
+/**
+ * @deprecated use connectMetaWear:connectionHandler:disconnectionHandler: instead
+ * @see connectMetaWear:connectionHandler:disconnectionHandler:
+ */
+- (void)connectMetaWear:(MBLMetaWear *)device withHandler:(MBLErrorHandler)handler DEPRECATED_MSG_ATTRIBUTE("Use connectMetaWear:connectionHandler:disconnectionHandler: instead");
+/**
+ * @deprecated use cancelMetaWearConnection: instead
+ * @see cancelMetaWearConnection:
+ */
+- (void)cancelMetaWearConnection:(MBLMetaWear *)device withHandler:(MBLErrorHandler)handler DEPRECATED_MSG_ATTRIBUTE("Use cancelMetaWearConnection: instead");
 
 @end

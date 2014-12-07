@@ -5,34 +5,34 @@
 	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
 	<false/>
 	<key>IDESourceControlProjectIdentifier</key>
-	<string>C61E7780-E726-4911-B5DD-E4F9AC045240</string>
+	<string>402D97A0-70D2-420B-987C-7CBA4BB0119C</string>
 	<key>IDESourceControlProjectName</key>
 	<string>MetaWearApiTest</string>
 	<key>IDESourceControlProjectOriginsDictionary</key>
 	<dict>
-		<key>3C056F96-2EAE-4568-BA11-70B640F2FD2D</key>
-		<string>ssh://github.com/mbientlab/Metawear-SampleiOSApp.git</string>
+		<key>6DB51F38D34EDBBEB31298F89D22CD93DC9EE165</key>
+		<string>github.com:mbientlab/Metawear-SampleiOSApp.git</string>
 	</dict>
 	<key>IDESourceControlProjectPath</key>
-	<string>MetaWearApiTest.xcodeproj/project.xcworkspace</string>
+	<string>MetaWearApiTest.xcodeproj</string>
 	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
 	<dict>
-		<key>3C056F96-2EAE-4568-BA11-70B640F2FD2D</key>
+		<key>6DB51F38D34EDBBEB31298F89D22CD93DC9EE165</key>
 		<string>../..</string>
 	</dict>
 	<key>IDESourceControlProjectURL</key>
-	<string>ssh://github.com/mbientlab/Metawear-SampleiOSApp.git</string>
+	<string>github.com:mbientlab/Metawear-SampleiOSApp.git</string>
 	<key>IDESourceControlProjectVersion</key>
-	<integer>110</integer>
+	<integer>111</integer>
 	<key>IDESourceControlProjectWCCIdentifier</key>
-	<string>3C056F96-2EAE-4568-BA11-70B640F2FD2D</string>
+	<string>6DB51F38D34EDBBEB31298F89D22CD93DC9EE165</string>
 	<key>IDESourceControlProjectWCConfigurations</key>
 	<array>
 		<dict>
 			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
 			<string>public.vcs.git</string>
 			<key>IDESourceControlWCCIdentifierKey</key>
-			<string>3C056F96-2EAE-4568-BA11-70B640F2FD2D</string>
+			<string>6DB51F38D34EDBBEB31298F89D22CD93DC9EE165</string>
 			<key>IDESourceControlWCCName</key>
 			<string>Metawear-SampleiOSApp</string>
 		</dict>
