@@ -38,6 +38,9 @@
 @property (weak, nonatomic) IBOutlet UIButton *startAccelerometer;
 @property (weak, nonatomic) IBOutlet UIButton *stopAccelerometer;
 
+@property (weak, nonatomic) IBOutlet UIButton *startiBeacon;
+@property (weak, nonatomic) IBOutlet UIButton *stopiBeacon;
+
 @property (weak, nonatomic) IBOutlet UILabel *mfgNameLabel;
 @property (weak, nonatomic) IBOutlet UILabel *serialNumLabel;
 @property (weak, nonatomic) IBOutlet UILabel *hwRevLabel;
@@ -71,6 +74,18 @@
     [self connectDevice:YES];
     
     [self.stopAccelerometer setEnabled:FALSE];
+    
+    uint8_t powerRX = self.device.iBeacon.powerRX;
+    if (powerRX == '\0') { // iBeacon is OFF ?
+        [self.startiBeacon setEnabled:TRUE];
+        [self.stopiBeacon setEnabled:FALSE];
+    }
+    else {
+        [self.startiBeacon setEnabled:FALSE];
+        [self.stopiBeacon setEnabled:TRUE];
+    }
+    
+
 }
 
 - (void)setConnected:(BOOL)on
@@ -254,11 +269,23 @@
 - (IBAction)startiBeaconPressed:(id)sender
 {
     [self.device.iBeacon setBeaconOn:YES];
+    uint8_t powerRX = self.device.iBeacon.powerRX;
+    if (powerRX == '\0') { // iBeacon is OFF ?
+    }
+
+    [self.startiBeacon setEnabled:FALSE];
+    [self.stopiBeacon setEnabled:TRUE];
 }
 
 - (IBAction)stopiBeaconPressed:(id)sender
 {
     [self.device.iBeacon setBeaconOn:NO];
+    uint8_t powerRX = self.device.iBeacon.powerRX;
+    if (powerRX == '\0') { // iBeacon is OFF ?
+    }
+    
+    [self.startiBeacon setEnabled:TRUE];
+    [self.stopiBeacon setEnabled:FALSE];
 }
 
 - (IBAction)setPullUpPressed:(id)sender
