@@ -1,10 +1,37 @@
-//
-//  DeviceDetailViewController.m
-//  MetaWearApiTest
-//
-//  Created by Stephen Schiffli on 7/30/14.
-//  Copyright (c) 2014 MbientLab. All rights reserved.
-//
+/**
+ * DeviceDetailViewController.m
+ * MetaWearApiTest
+ *
+ * Created by Stephen Schiffli on 7/30/14.
+ * Copyright 2014 MbientLab Inc. All rights reserved.
+ *
+ * IMPORTANT: Your use of this Software is limited to those specific rights
+ * granted under the terms of a software license agreement between the user who
+ * downloaded the software, his/her employer (which must be your employer) and
+ * MbientLab Inc, (the "License").  You may not use this Software unless you
+ * agree to abide by the terms of the License which can be found at
+ * www.mbientlab.com/terms . The License limits your use, and you acknowledge,
+ * that the  Software may not be modified, copied or distributed and can be used
+ * solely and exclusively in conjunction with a MbientLab Inc, product.  Other
+ * than for the foregoing purpose, you may not use, reproduce, copy, prepare
+ * derivative works of, modify, distribute, perform, display or sell this
+ * Software and/or its documentation for any purpose.
+ *
+ * YOU FURTHER ACKNOWLEDGE AND AGREE THAT THE SOFTWARE AND DOCUMENTATION ARE
+ * PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY, TITLE,
+ * NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
+ * MBIENTLAB OR ITS LICENSORS BE LIABLE OR OBLIGATED UNDER CONTRACT, NEGLIGENCE,
+ * STRICT LIABILITY, CONTRIBUTION, BREACH OF WARRANTY, OR OTHER LEGAL EQUITABLE
+ * THEORY ANY DIRECT OR INDIRECT DAMAGES OR EXPENSES INCLUDING BUT NOT LIMITED
+ * TO ANY INCIDENTAL, SPECIAL, INDIRECT, PUNITIVE OR CONSEQUENTIAL DAMAGES, LOST
+ * PROFITS OR LOST DATA, COST OF PROCUREMENT OF SUBSTITUTE GOODS, TECHNOLOGY,
+ * SERVICES, OR ANY CLAIMS BY THIRD PARTIES (INCLUDING BUT NOT LIMITED TO ANY
+ * DEFENSE THEREOF), OR OTHER SIMILAR COSTS.
+ *
+ * Should you have any questions regarding your right to use this Software,
+ * contact MbientLab Inc, at www.mbientlab.com.
+ */
 
 #import "DeviceDetailViewController.h"
 #import "MBProgressHUD.h"
@@ -18,6 +45,7 @@
 @property (weak, nonatomic) IBOutlet UISegmentedControl *accelerometerScale;
 @property (weak, nonatomic) IBOutlet UISegmentedControl *sampleFrequency;
 @property (weak, nonatomic) IBOutlet UISwitch *highPassFilterSwitch;
+@property (weak, nonatomic) IBOutlet UISegmentedControl *hpfCutoffFreq;
 @property (weak, nonatomic) IBOutlet UISwitch *lowNoiseSwitch;
 @property (weak, nonatomic) IBOutlet UISegmentedControl *activePowerScheme;
 @property (weak, nonatomic) IBOutlet UISwitch *autoSleepSwitch;
@@ -37,6 +65,8 @@
 
 @property (weak, nonatomic) IBOutlet UIButton *startAccelerometer;
 @property (weak, nonatomic) IBOutlet UIButton *stopAccelerometer;
+@property (weak, nonatomic) IBOutlet UIButton *startLog;
+@property (weak, nonatomic) IBOutlet UIButton *stopLog;
 
 @property (weak, nonatomic) IBOutlet UIButton *startiBeacon;
 @property (weak, nonatomic) IBOutlet UIButton *stopiBeacon;
@@ -49,10 +79,9 @@
 @property (weak, nonatomic) IBOutlet UILabel *firmwareUpdateLabel;
 
 @property (strong, nonatomic) UIView *grayScreen;
-
-@property (strong, nonatomic) NSString *accDataString;
-@property (strong, nonatomic) NSMutableArray *accDataArray;
-
+@property (strong, nonatomic) NSArray *accelerometerDataArray;
+@property (nonatomic) BOOL accelerometerRunning;
+@property (nonatomic) BOOL switchRunning;
 @end
 
 @implementation DeviceDetailViewController
@@ -65,17 +94,24 @@
     self.grayScreen.backgroundColor = [UIColor grayColor];
     self.grayScreen.alpha = 0.4;
     [self.view addSubview:self.grayScreen];
+    
+    [self.stopAccelerometer setEnabled:NO];
+    [self.stopLog setEnabled:NO];
 }
 
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
     
+    [self.device addObserver:self forKeyPath:@"state" options:NSKeyValueObservingOptionNew context:nil];
     [self connectDevice:YES];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
     
-    [self.stopAccelerometer setEnabled:FALSE];
-    
-    uint8_t powerRX = self.device.iBeacon.powerRX;
+    uint8_t powerRX = self.device.iBeacon.calibratedReceiverPower;
     if (powerRX == '\0') { // iBeacon is OFF ?
         [self.startiBeacon setEnabled:TRUE];
         [self.stopiBeacon setEnabled:FALSE];
@@ -85,7 +121,22 @@
         [self.stopiBeacon setEnabled:TRUE];
     }
     
+    [self.device removeObserver:self forKeyPath:@"state"];
 
+    if (self.accelerometerRunning) {
+        [self stopAccelerationPressed:nil];
+    }
+    if (self.switchRunning) {
+        [self StopSwitchNotifyPressed:nil];
+    }
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+    if (self.device.state == CBPeripheralStateDisconnected) {
+        [self setConnected:NO];
+        [self.scrollView scrollRectToVisible:CGRectMake(0, 0, 10, 10) animated:YES];
+    }
 }
 
 - (void)setConnected:(BOOL)on
@@ -96,37 +147,32 @@
 
 - (void)connectDevice:(BOOL)on
 {
+    MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
     if (on) {
-        MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
         hud.labelText = @"Connecting...";
-        [[MBLMetaWearManager sharedManager] connectMetaWear:self.device withHandler:^(NSError *error) {
-            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                [self setConnected:(error == nil)];
-                hud.mode = MBProgressHUDModeText;
-                if (error) {
-                    hud.labelText = error.localizedDescription;
-                    [hud hide:YES afterDelay:2];
-                } else {
-                    hud.labelText = @"Connected!";
-                    [hud hide:YES afterDelay:0.5];
-                }
-            }];
+        [self.device connectWithHandler:^(NSError *error) {
+            [self setConnected:(error == nil)];
+            hud.mode = MBProgressHUDModeText;
+            if (error) {
+                hud.labelText = error.localizedDescription;
+                [hud hide:YES afterDelay:2];
+            } else {
+                hud.labelText = @"Connected!";
+                [hud hide:YES afterDelay:0.5];
+            }
         }];
     } else {
-        MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
         hud.labelText = @"Disconnecting...";
-        [[MBLMetaWearManager sharedManager] cancelMetaWearConnection:self.device withHandler:^(NSError *error) {
-            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                [self setConnected:NO];
-                hud.mode = MBProgressHUDModeText;
-                if (error) {
-                    hud.labelText = error.localizedDescription;
-                    [hud hide:YES afterDelay:2];
-                } else {
-                    hud.labelText = @"Disconnected!";
-                    [hud hide:YES afterDelay:0.5];
-                }
-            }];
+        [self.device disconnectWithHandler:^(NSError *error) {
+            [self setConnected:NO];
+            hud.mode = MBProgressHUDModeText;
+            if (error) {
+                hud.labelText = error.localizedDescription;
+                [hud hide:YES afterDelay:2];
+            } else {
+                hud.labelText = @"Disconnected!";
+                [hud hide:YES afterDelay:0.5];
+            }
         }];
     }
 }
@@ -139,7 +185,8 @@
 - (IBAction)readTempraturePressed:(id)sender
 {
     [self.device.temperature readTemperatureWithHandler:^(NSDecimalNumber *temp, NSError *error) {
-        self.tempratureLabel.text = [temp stringValue];
+        NSString *suffix = self.device.temperature.units == MBLTemperatureUnitCelsius ? @"°C" : @"°F";
+        self.tempratureLabel.text = [[temp stringValue] stringByAppendingString:suffix];
     }];
 }
 
@@ -184,14 +231,16 @@
 
 - (IBAction)startSwitchNotifyPressed:(id)sender
 {
-    [self.device.mechanicalSwitch startSwitchUpdatesWithHandler:^(BOOL isPressed, NSError *error) {
-        self.mechanicalSwitchLabel.text = isPressed ? @"Down" : @"Up";
+    self.switchRunning = YES;
+    [self.device.mechanicalSwitch.switchUpdateEvent startNotificationsWithHandler:^(NSNumber *isPressed, NSError *error) {
+        self.mechanicalSwitchLabel.text = isPressed.boolValue ? @"Down" : @"Up";
     }];
 }
 
 - (IBAction)StopSwitchNotifyPressed:(id)sender
 {
-    [self.device.mechanicalSwitch stopSwitchUpdates];
+    self.switchRunning = NO;
+    [self.device.mechanicalSwitch.switchUpdateEvent stopNotifications];
 }
 
 - (IBAction)readBatteryPressed:(id)sender
@@ -210,12 +259,10 @@
 
 - (IBAction)readDeviceInfoPressed:(id)sender
 {
-    [self.device readDeviceInfoWithHandler:^(MBLDeviceInfo *deviceInfo, NSError *error) {
-        self.mfgNameLabel.text = deviceInfo.manufacturerName;
-        self.serialNumLabel.text = deviceInfo.serialNumber;
-        self.hwRevLabel.text = deviceInfo.hardwareRevision;
-        self.fwRevLabel.text = deviceInfo.firmwareRevision;
-    }];
+    self.mfgNameLabel.text = self.device.deviceInfo.manufacturerName;
+    self.serialNumLabel.text = self.device.deviceInfo.serialNumber;
+    self.hwRevLabel.text = self.device.deviceInfo.hardwareRevision;
+    self.fwRevLabel.text = self.device.deviceInfo.firmwareRevision;
 }
 
 - (IBAction)resetDevicePressed:(id)sender
@@ -238,22 +285,29 @@
     MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
     hud.mode = MBProgressHUDModeDeterminateHorizontalBar;
     hud.labelText = @"Updating...";
-
-    // Updating firmware causes a disconnection
-    [self setConnected:NO];
     
     [self.device updateFirmwareWithHandler:^(NSError *error) {
-        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-            if (error) {
-                hud.labelText = error.localizedDescription;
-                NSLog(@"Firmware update error: %@", error.localizedDescription);
-            } else {
-                hud.labelText = @"Success!";
-            }
-            [hud hide:YES afterDelay:2.5];
-        }];
+        hud.mode = MBProgressHUDModeText;
+        if (error) {
+            NSLog(@"Firmware update error: %@", error.localizedDescription);
+            [[[UIAlertView alloc] initWithTitle:@"Update Error"
+                                        message:[@"Please re-connect and try again, if you can't connect, try MetaBoot Mode to recover.\nError: " stringByAppendingString:error.localizedDescription]
+                                       delegate:nil
+                              cancelButtonTitle:@"Okay"
+                              otherButtonTitles:nil] show];
+            [hud hide:YES];
+        } else {
+            hud.labelText = @"Success!";
+            [hud hide:YES afterDelay:2.0];
+        }
     } progressHandler:^(float number, NSError *error) {
-        hud.progress = number;
+        if (number != hud.progress) {
+            hud.progress = number;
+            if (number == 1.0) {
+                hud.mode = MBProgressHUDModeIndeterminate;
+                hud.labelText = @"Resetting...";
+            }
+        }
     }];
 }
 
@@ -261,15 +315,13 @@
 {
     uint8_t dcycle = [self.hapticDutyCycle.text intValue];
     uint16_t pwidth = [self.hapticPulseWidth.text intValue];
-    [self.device.hapticBuzzer startHapticWithDutyCycle:dcycle pulseWidth:pwidth completion:^{
-        [self.device.hapticBuzzer startHapticWithDutyCycle:dcycle pulseWidth:pwidth completion:nil];
-    }];
+    [self.device.hapticBuzzer startHapticWithDutyCycle:dcycle pulseWidth:pwidth completion:nil];
 }
 
 - (IBAction)startiBeaconPressed:(id)sender
 {
     [self.device.iBeacon setBeaconOn:YES];
-    uint8_t powerRX = self.device.iBeacon.powerRX;
+    uint8_t powerRX = self.device.iBeacon.calibratedReceiverPower;
     if (powerRX == '\0') { // iBeacon is OFF ?
     }
 
@@ -280,7 +332,7 @@
 - (IBAction)stopiBeaconPressed:(id)sender
 {
     [self.device.iBeacon setBeaconOn:NO];
-    uint8_t powerRX = self.device.iBeacon.powerRX;
+    uint8_t powerRX = self.device.iBeacon.calibratedReceiverPower;
     if (powerRX == '\0') { // iBeacon is OFF ?
     }
     
@@ -290,34 +342,41 @@
 
 - (IBAction)setPullUpPressed:(id)sender
 {
-    [self.device.gpio configurePin:self.gpioPinSelector.selectedSegmentIndex withOptions:0];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin configureType:MBLPinConfigurationPullup];
 }
 - (IBAction)setPullDownPressed:(id)sender
 {
-    [self.device.gpio configurePin:self.gpioPinSelector.selectedSegmentIndex withOptions:1];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin configureType:MBLPinConfigurationPulldown];
 }
 - (IBAction)setNoPullPressed:(id)sender
 {
-    [self.device.gpio configurePin:self.gpioPinSelector.selectedSegmentIndex withOptions:2];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin configureType:MBLPinConfigurationNopull];
 }
 - (IBAction)setPinPressed:(id)sender
 {
-    [self.device.gpio setPin:self.gpioPinSelector.selectedSegmentIndex toDigitalValue:YES];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin setToDigitalValue:YES];
 }
 - (IBAction)clearPinPressed:(id)sender
 {
-    [self.device.gpio setPin:self.gpioPinSelector.selectedSegmentIndex toDigitalValue:NO];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin setToDigitalValue:NO];
 }
 - (IBAction)readDigitalPressed:(id)sender
 {
-    [self.device.gpio readDigitalPin:self.gpioPinSelector.selectedSegmentIndex withHander:^(BOOL isTrue, NSError *error) {
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin readDigitalValueWithHandler:^(BOOL isTrue, NSError *error) {
         self.gpioPinDigitalValue.text = isTrue ? @"1" : @"0";
     }];
 }
 - (IBAction)readAnalogPressed:(id)sender
 {
-    [self.device.gpio readAnalogPin:self.gpioPinSelector.selectedSegmentIndex usingOptions:0 withHandler:^(NSDecimalNumber *number, NSError *error) {
-        self.gpioPinAnalogValue.text = [number stringValue];
+    MBLGPIOPin *pin = self.device.gpio.pins[self.gpioPinSelector.selectedSegmentIndex];
+    [pin readAnalogValueUsingMode:MBLAnalogReadModeFixed handler:^(NSDecimalNumber *number, NSError *error) {
+        self.gpioPinAnalogValue.text = [NSString stringWithFormat:@"%.3fV", number.doubleValue];
     }];
 }
 
@@ -334,81 +393,107 @@
     self.device.accelerometer.fullScaleRange = (int)self.accelerometerScale.selectedSegmentIndex;
     self.device.accelerometer.sampleFrequency = (int)self.sampleFrequency.selectedSegmentIndex;
     self.device.accelerometer.highPassFilter = self.highPassFilterSwitch.on;
-    self.device.accelerometer.lowNoise = self.highPassFilterSwitch.on;
+    self.device.accelerometer.filterCutoffFreq = self.hpfCutoffFreq.selectedSegmentIndex;
+    self.device.accelerometer.lowNoise = self.lowNoiseSwitch.on;
     self.device.accelerometer.activePowerScheme = (int)self.activePowerScheme.selectedSegmentIndex;
     self.device.accelerometer.autoSleep = self.autoSleepSwitch.on;
     self.device.accelerometer.sleepSampleFrequency = (int)self.sleepSampleFrequency.selectedSegmentIndex;
-    self.device.accelerometer.activePowerScheme = (int)self.activePowerScheme.selectedSegmentIndex;
+    self.device.accelerometer.sleepPowerScheme = (int)self.sleepPowerScheme.selectedSegmentIndex;
    
-    [self.startAccelerometer setEnabled:FALSE];
-    [self.stopAccelerometer setEnabled:TRUE];
-    
+    [self.startAccelerometer setEnabled:NO];
+    [self.stopAccelerometer setEnabled:YES];
+    [self.startLog setEnabled:NO];
+    [self.stopLog setEnabled:NO];
+    self.accelerometerRunning = YES;
     // These variables are used for data recording
-    self.accDataArray = [[NSMutableArray alloc] initWithCapacity:1000];
+    NSMutableArray *array = [[NSMutableArray alloc] initWithCapacity:1000];
+    self.accelerometerDataArray = array;
     
-    [self.device.accelerometer startAccelerometerUpdatesWithHandler:^(MBLAccelerometerData *acceleration, NSError *error) {
-        [self.accelerometerGraph addX:acceleration.x y:acceleration.y z:acceleration.z];
+    [self.device.accelerometer.dataReadyEvent startNotificationsWithHandler:^(MBLAccelerometerData *acceleration, NSError *error) {
+        NSLog(@"%@", acceleration);
+        [self.accelerometerGraph addX:(float)acceleration.x / 1000.0 y:(float)acceleration.y / 1000.0 z:(float)acceleration.z / 1000.0];
         // Add data to data array for saving
-        [self.accDataArray addObject:acceleration];
+        [array addObject:acceleration];
     }];
 }
 
 - (IBAction)stopAccelerationPressed:(id)sender
 {
-    [self.device.accelerometer stopAccelerometerUpdates];
-    
-    [self.startAccelerometer setEnabled:TRUE];
-    [self.stopAccelerometer setEnabled:FALSE];
-    
-    self.accDataString = [self processAccData];
+    [self.device.accelerometer.dataReadyEvent stopNotifications];
+    self.accelerometerRunning = NO;
+
+    [self.startAccelerometer setEnabled:YES];
+    [self.stopAccelerometer setEnabled:NO];
+    [self.startLog setEnabled:YES];
 }
 
-- (NSString *)processAccData
+- (IBAction)startAccelerometerLog:(id)sender
 {
-    NSMutableString *AccelerometerString = [[NSMutableString alloc] init];
-    for (MBLAccelerometerData *dataElement in self.accDataArray)
-    {
-        @autoreleasepool {
-            [AccelerometerString appendFormat:@"%f,%f,%f,%f\n", dataElement.intervalSinceCaptureBegan,
-             dataElement.x,
-             dataElement.y,
-             dataElement.z];
-        }
+    if (self.accelerometerScale.selectedSegmentIndex == 0) {
+        self.accelerometerGraph.fullScale = 2;
+    } else if (self.accelerometerScale.selectedSegmentIndex == 1) {
+        self.accelerometerGraph.fullScale = 4;
+    } else {
+        self.accelerometerGraph.fullScale = 8;
     }
-    return AccelerometerString;
+    
+    self.device.accelerometer.fullScaleRange = (int)self.accelerometerScale.selectedSegmentIndex;
+    self.device.accelerometer.sampleFrequency = (int)self.sampleFrequency.selectedSegmentIndex;
+    self.device.accelerometer.highPassFilter = self.highPassFilterSwitch.on;
+    self.device.accelerometer.filterCutoffFreq = self.hpfCutoffFreq.selectedSegmentIndex;
+    self.device.accelerometer.lowNoise = self.lowNoiseSwitch.on;
+    self.device.accelerometer.activePowerScheme = (int)self.activePowerScheme.selectedSegmentIndex;
+    self.device.accelerometer.autoSleep = self.autoSleepSwitch.on;
+    self.device.accelerometer.sleepSampleFrequency = (int)self.sleepSampleFrequency.selectedSegmentIndex;
+    self.device.accelerometer.sleepPowerScheme = (int)self.sleepPowerScheme.selectedSegmentIndex;
+    
+    [self.startLog setEnabled:NO];
+    [self.stopLog setEnabled:YES];
+    [self.startAccelerometer setEnabled:NO];
+    [self.stopAccelerometer setEnabled:NO];
+    
+    [self.device.accelerometer.dataReadyEvent startLogging];
 }
 
-- (NSString *)saveDatatoDisk:(NSString *)dataString
+- (IBAction)stopAccelerometerLog:(id)sender
 {
-    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    NSString *documentsDirectory = [paths objectAtIndex:0];
+    MBProgressHUD *hud = [MBProgressHUD showHUDAddedTo:self.view animated:YES];
+    hud.mode = MBProgressHUDModeDeterminateHorizontalBar;
+    hud.labelText = @"Downloading...";
     
-    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-    [dateFormatter setTimeStyle:NSDateFormatterLongStyle];
-    [dateFormatter setDateStyle:NSDateFormatterShortStyle];
-    
-    // Some filesystems hate colons
-    NSString *dateString = [[dateFormatter stringFromDate:[NSDate date]] stringByReplacingOccurrencesOfString:@":" withString:@"_"];
-    // I hate spaces in dates
-    dateString = [dateString stringByReplacingOccurrencesOfString:@" " withString:@"_"];
-    // OS hates forward slashes
-    dateString = [dateString stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
-    NSString *fullPath = [documentsDirectory stringByAppendingPathComponent:[NSString stringWithFormat:@"userAcceleration_%@.txt", dateString, nil]];
-    [dataString writeToFile:fullPath
-                 atomically:NO
-                   encoding:NSStringEncodingConversionAllowLossy
-                      error:nil];
-    
-    return fullPath;
+    [self.device.accelerometer.dataReadyEvent downloadLogAndStopLogging:YES handler:^(NSArray *array, NSError *error) {
+        [hud hide:YES];
+        if (!error) {
+            self.accelerometerDataArray = array;
+            for (MBLAccelerometerData *acceleration in array) {
+                [self.accelerometerGraph addX:(float)acceleration.x / 1000.0 y:(float)acceleration.y / 1000.0 z:(float)acceleration.z / 1000.0];
+            }
+        }
+    } progressHandler:^(float number, NSError *error) {
+        hud.progress = number;
+    }];
+    [self.stopLog setEnabled:NO];
+    [self.startLog setEnabled:YES];
+    [self.startAccelerometer setEnabled:YES];
 }
+
 
 - (IBAction)sendDataPressed:(id)sender
 {
-    NSString *filePath = [self saveDatatoDisk:self.accDataString];
-    [self mailMe:filePath];
+    NSMutableData *accelerometerData = [NSMutableData data];
+    for (MBLAccelerometerData *dataElement in self.accelerometerDataArray) {
+        @autoreleasepool {
+            [accelerometerData appendData:[[NSString stringWithFormat:@"%f,%d,%d,%d\n",
+                                            dataElement.timestamp.timeIntervalSince1970,
+                                            dataElement.x,
+                                            dataElement.y,
+                                            dataElement.z] dataUsingEncoding:NSUTF8StringEncoding]];
+        }
+    }
+    [self sendMail:accelerometerData];
 }
 
-- (void)mailMe:(NSString *)filePath
+- (void)sendMail:(NSData *)attachment
 {
     if (![MFMailComposeViewController canSendMail]) {
         [[[UIAlertView alloc] initWithTitle:@"Mail Error" message:@"This device does not have an email account setup" delegate:nil cancelButtonTitle:@"Okay" otherButtonTitles:nil] show];
@@ -427,37 +512,35 @@
     // OS hates forward slashes
     dateString = [dateString stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
     
-    // recipient address
-    NSString *email = @"your@email.com";
-    NSMutableArray *toRecipient = [[NSMutableArray alloc]initWithObjects:nil];
-    [toRecipient addObject:email];
     MFMailComposeViewController *emailController = [[MFMailComposeViewController alloc] init];
     emailController.mailComposeDelegate = self;
     
     // attachment
-    NSData *data = [NSData dataWithContentsOfFile:filePath];
     NSString *name = [NSString stringWithFormat:@"AccData_%@.txt", dateString, nil];
-    [emailController addAttachmentData:data mimeType:@"text/plain" fileName:name];
+    [emailController addAttachmentData:attachment mimeType:@"text/plain" fileName:name];
     
     // subject
     NSString *subject = [NSString stringWithFormat:@"Accelerometer Data %@.txt", dateString, nil];
     [emailController setSubject:subject];
     
+    NSMutableString *body = [[NSMutableString alloc] initWithFormat:@"The data was recorded on %@.\n", dateString];
+    [body appendString:[NSString stringWithFormat:@"Scale = %d\n", (int)self.accelerometerScale.selectedSegmentIndex]];
+    [body appendString:[NSString stringWithFormat:@"Freq = %d\n", (int)self.sampleFrequency.selectedSegmentIndex]];
+    [body appendString:[NSString stringWithFormat:@"HPF On = %d\n", (int)self.highPassFilterSwitch.on]];
+    [body appendString:[NSString stringWithFormat:@"HPF Cutoff = %d\n", (int)self.hpfCutoffFreq.selectedSegmentIndex]];
+    [body appendString:[NSString stringWithFormat:@"LowNoise On = %d\n", self.lowNoiseSwitch.on]];
+    [body appendString:[NSString stringWithFormat:@"Active Power Scheme = %d\n", (int)self.activePowerScheme.selectedSegmentIndex]];
+    [body appendString:[NSString stringWithFormat:@"Auto Sleep On = %d\n", self.autoSleepSwitch.on]];
+    [body appendString:[NSString stringWithFormat:@"SleepFreq = %d\n", (int)self.sleepSampleFrequency.selectedSegmentIndex]];
+    [body appendString:[NSString stringWithFormat:@"Sleep Power Scheme = %d\n", (int)self.sleepPowerScheme.selectedSegmentIndex]];
+    [emailController setMessageBody:body isHTML:NO];
     
-    NSString *messageBody = [NSString stringWithFormat:@"The data was recorded on %@.", dateString,nil];
-    [emailController setMessageBody:messageBody isHTML:NO];
-    
-    
-    [emailController setToRecipients:toRecipient];
     [self presentViewController:emailController animated:YES completion:NULL];
-    
 }
 
 -(void)mailComposeController:(MFMailComposeViewController*)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError*)error
 {
     [self dismissViewControllerAnimated:YES completion:nil];
-    
-    NSLog (@"mail finished"); // NEVER REACHES THIS POINT.
 }
 
 @end
